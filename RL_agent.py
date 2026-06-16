@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 from env.cardiac_env import (
-    MysteraCardiacEnv, DISEASES, LABEL_MAP, LABEL_NAMES,
+    MysteraCardiacEnv, DISEASES, DISEASE_DISPLAY_NAMES, LABEL_MAP, LABEL_NAMES,
     KEEP, UPGRADE, DOWNGRADE, COLD_START_THRESHOLD
 )
 from data.sample_profiles import SAMPLE_PROFILES, DOCTOR_LABELS
@@ -43,7 +43,7 @@ def simulate_manual(patient_idx=0, override_action=None, bypass_coldstart=True):
     patient_idx : int
         Index into SAMPLE_PROFILES (0–4)
     override_action : int or None
-        Force a specific action (0–8) instead of random
+        Force a specific action (0–(len(DISEASES)*3-1)) instead of random
     bypass_coldstart : bool
         If True, give the patient 10 prior interactions so the agent acts
     """
@@ -65,7 +65,9 @@ def simulate_manual(patient_idx=0, override_action=None, bypass_coldstart=True):
     print("  EPISODE SIMULATION")
     print("█"*60)
 
-    # Show the raw observation vector with labels
+    # Show the raw observation vector with labels. The fixed clinical features
+    # come first, then one "Current label" entry per disease in DISEASES — kept
+    # in sync automatically as the agent's scope expands to more diseases.
     feature_names = [
         "BMI (normalised)",
         "Smoking",
@@ -75,10 +77,7 @@ def simulate_manual(patient_idx=0, override_action=None, bypass_coldstart=True):
         "LDL cholesterol (normalised)",
         "HDL cholesterol (normalised)",
         "ECG ischemia",
-        "Current label: Angina",
-        "Current label: Atherosclerosis",
-        "Current label: CAD",
-    ]
+    ] + [f"Current label: {DISEASE_DISPLAY_NAMES[d]}" for d in DISEASES]
     print(f"\n  Patient: {patient_id}")
     print(f"\n  Observation vector (what the agent sees):")
     for name, val in zip(feature_names, obs):

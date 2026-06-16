@@ -599,6 +599,49 @@ def load_meta() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# AGENT-FACING PROFILE
+# Converts a run_patient() result into the exact shape MysteraCardiacEnv expects
+# (see env/cardiac_env.py and data/sample_profiles.py SAMPLE_PROFILES): a flat
+# dict of the fields the env reads, plus a `rule_labels` dict keyed by the
+# env's 3-disease cardiac-agent scope.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# scoring.py's DISEASE_NAMES -> env.cardiac_env.DISEASES. Renames only where the
+# two engines' naming conventions differ (coronaryarterydisease -> cad); every
+# disease the rules engine scores is passed through to the agent.
+AGENT_DISEASE_KEYS = {
+    "angina":                 "angina",
+    "atherosclerosis":        "atherosclerosis",
+    "cardiogenicshock":       "cardiogenicshock",
+    "coronaryarterydisease":  "cad",
+}
+
+
+def _as_bool(value: Any) -> bool:
+    return str(value).lower() == "true"
+
+
+def to_agent_profile(result: dict) -> dict:
+    p = result["profile"]
+    risk = result["risk_profile"]
+    return {
+        "patient_id":                        result["ehr_id"],
+        "patient_imc":                        p.get("patient_imc") or 0,
+        "patient_last_smoking":               _as_bool(p.get("patient_last_smoking")),
+        "patient_last_famhistory":            _as_bool(p.get("patient_last_famhistory")),
+        "patient_last_blood_troponint":       p.get("patient_last_blood_troponint", 0),
+        "patient_last_vitals_systolicbp":     p.get("patient_last_vitals_systolicbp") or 0,
+        "patient_last_blood_ldlcholesterol":  p.get("patient_last_blood_ldlcholesterol", 0),
+        "patient_last_blood_hdlcholesterol":  p.get("patient_last_blood_hdlcholesterol", 0),
+        "patient_last_ecg_ischemia":          False,  # not yet captured in EHRbase
+        "rule_labels": {
+            agent_key: risk[score_key].lower().replace(" ", "_")
+            for score_key, agent_key in AGENT_DISEASE_KEYS.items()
+        },
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PIPELINE — per patient
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -608,12 +651,14 @@ def run_patient(ehr_id: str, fetcher: DataFetcher, meta: dict) -> dict:
     rule_results = evaluate_all_rules(profile)
     risk         = classify_risk(rule_results)
     triggered    = [k for k, v in rule_results.items() if v]
-    return {
+    result = {
         "ehr_id":          ehr_id,
         "profile":         profile,
         "rules_triggered": triggered,
         "risk_profile":    risk,
     }
+    result["agent_profile"] = to_agent_profile(result)
+    return result
 
 
 DEBUG = False  # set via --debug flag
@@ -680,6 +725,9 @@ def main():
     parser.add_argument("--password",    default=DEFAULT_PASSWORD)
     parser.add_argument("--patient-id",  help="Score a single EHR ID")
     parser.add_argument("--output",      help="Save results to JSON file")
+    parser.add_argument("--agent-output", help="Save patient profiles in MysteraCardiacEnv-compatible "
+                                                "format (same list-of-dicts shape as SAMPLE_PROFILES "
+                                                "in data/sample_profiles.py)")
     parser.add_argument("--debug",       action="store_true", help="Print raw profile values")
     args = parser.parse_args()
     global DEBUG
@@ -717,6 +765,11 @@ def main():
         with open(args.output, "w") as f:
             json.dump(results, f, indent=2, default=str)
         print(f"  Results saved → {args.output}\n")
+
+    if args.agent_output:
+        with open(args.agent_output, "w") as f:
+            json.dump([r["agent_profile"] for r in results], f, indent=2, default=str)
+        print(f"  Agent-compatible profiles saved → {args.agent_output}\n")
 
 
 if __name__ == "__main__":
