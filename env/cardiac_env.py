@@ -51,7 +51,7 @@ def bool_to_float(value):
 
 
 def build_observation(profile):
-    """Map a raw profile dict to the 11-dim observation vector the agent sees."""
+    """Map a raw profile dict to the (8 + len(DISEASES))-dim observation vector the agent sees."""
     rule_labels = profile["rule_labels"]
     return np.array(
         [
